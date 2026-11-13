@@ -109,52 +109,6 @@ enum EMDF {
     }
 }
 
-// MARK: Frame editing
-
-extension Array where Element == UInt8 {
-    mutating func flipBits(at bit: Int, count: Int) {
-        for b in bit..<(bit + count) { self[b >> 3] ^= UInt8(0x80 >> (b & 7)) }
-    }
-}
-
-enum EAC3Edit {
-    /// CRC-16 (x^16 + x^15 + x^2 + 1) as used for E-AC-3 crc2.
-    static func crc16(_ d: ArraySlice<UInt8>) -> UInt16 {
-        var r: UInt16 = 0
-        for b in d {
-            r ^= UInt16(b) << 8
-            for _ in 0..<8 { r = (r & 0x8000) != 0 ? (r << 1) ^ 0x8005 : r << 1 }
-        }
-        return r
-    }
-
-    /// Rewrites the frame's trailing crc2 after an edit.
-    static func fixCRC(_ f: inout [UInt8]) {
-        let c = crc16(f[2..<(f.count - 2)])
-        f[f.count - 2] = UInt8(c >> 8)
-        f[f.count - 1] = UInt8(c & 0xFF)
-    }
-
-    /// Test only: breaks the EMDF protection value to see whether the decoder verifies it.
-    static func breakProtection(_ f: inout [UInt8]) -> Bool {
-        guard let c = EMDF.find(in: f).first, c.protectionPrimaryBits > 0 else { return false }
-        f.flipBits(at: c.protectionBit, count: c.protectionPrimaryBits)
-        fixCRC(&f)
-        return true
-    }
-
-    /// Applies `edit` to every sync frame in a packet and returns the rebuilt packet.
-    static func editPacket(_ d: Data, _ edit: (inout [UInt8]) -> Void) -> Data {
-        var out = Data(capacity: d.count)
-        for fr in EAC3.split(d) {
-            var bytes = [UInt8](d.subdata(in: fr.offset..<(fr.offset + fr.bytes)))
-            edit(&bytes)
-            out.append(contentsOf: bytes)
-        }
-        return out
-    }
-}
-
 func emdfProbe(_ path: String, start: Double, frames: Int) throws {
     let mkv = try MKVFile(path: path)
     guard let a = mkv.tracks.first(where: { $0.codecID == "A_EAC3" && $0.name.localizedCaseInsensitiveContains("atmos") }) else { return }

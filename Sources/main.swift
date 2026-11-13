@@ -28,12 +28,9 @@ func audioTest(_ path: String, start: Double, length: Double) throws {
     let endNs = Int64((start + length) * 1e9)
     DispatchQueue.global(qos: .userInitiated).async {
         let packer = IEC61937Packer()
-        let tamper = ProcessInfo.processInfo.environment["TAMPER"] == "1"
-        if tamper { print("TEST: EMDF protection deliberately broken in every frame") }
         mkv.readPackets(from: mkv.clusterOffset(for: startNs), tracks: [track.number]) { pkt in
             if pkt.pts < startNs { return true }
-            let data = tamper ? EAC3Edit.editPacket(pkt.data) { _ = EAC3Edit.breakProtection(&$0) } : pkt.data
-            for (burst, _) in packer.feed(data, pts: pkt.pts) {
+            for (burst, _) in packer.feed(pkt.data, pts: pkt.pts) {
                 if !out.fifo.write(burst, generation: 0, current: { 0 }) { return false }
             }
             return pkt.pts < endNs
